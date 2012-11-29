@@ -1,0 +1,48 @@
+label test_old_xmacro
+  MotionNotify 1529 1705
+  KeyStrRelease Escape
+  MotionNotify 1064 1413
+  ButtonPress 1
+  ButtonRelease 1
+  return
+label breaker
+  break
+  print I should not see this
+  return
+label call_breaker
+  print calling break
+  goto breaker
+  print this should not be printed
+  return
+label return_test
+  print inside return_test
+  return
+label arg_test
+  print  Arguments are ${arg1} and ${arg2}\n
+  return
+entry
+  move arg1 5
+  move arg2 7
+  if ${arg1} is 5
+    if ${arg2} not 6
+      print Apparently, nested ifs work... 
+    endif
+  endif
+end
+  in name Name:  
+  print Hello ${name}, I am KITT.\n
+  print this should have 3 ! 0x21 0x21
+  print starting break test\n
+  goto call_breaker
+  print end of break test\n
+  print starting return test\n
+  goto return_test
+  print returned from return_test\n
+  print this\nshould appear\non three lines\n
+  print testing old xmacro functionality\n
+  goto test_old_xmacro
+  print Testing arguments.\n
+  move arg1 5
+  move arg2 Hello World
+  goto arg_test
+end

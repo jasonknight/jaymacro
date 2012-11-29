@@ -1,0 +1,7 @@
+entry
+  FileOpen myFile test/test.txt
+  FileReadAll myFile fileContents
+  print ${fileContents}
+  FileLength myFile length
+  print ${length}
+end

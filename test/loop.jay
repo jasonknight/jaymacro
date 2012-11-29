@@ -1,0 +1,12 @@
+label loop
+  print Looping: ${i} \n
+  if ${i} not 5
+   set i ${i} + 1
+   goto loop
+  endif
+  return
+entry
+  set i 0
+  goto loop
+  print Loop finished, exiting \n
+end

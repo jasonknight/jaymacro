@@ -1,0 +1,12 @@
+Entry
+ set str Hello World
+ set pat Hello\s([A-Za-z]+).*
+ if ${str} like ${pat}
+   print Capt: ${1}\n
+ endif
+ set cp1 ([A-Za-z]+)
+ set pat Hello\s${cp1}.*
+ if ${str} like ${pat}
+   print Variable Expansion in regex works\n
+ endif
+end

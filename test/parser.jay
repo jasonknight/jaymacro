@@ -1,0 +1,12 @@
+entry
+  print 1 + 2 + 8 - 1 - 3 
+  print \n
+  set x 10
+  set y 15
+  set sum ${x} + ${y}
+  print Sum is: ${sum} \n
+  print 10.36 + 18.2
+  print \n
+  print 1 + 2 + 3
+  print \n
+end
