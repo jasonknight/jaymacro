@@ -1,7 +1,15 @@
 entry
   FileOpen myFile test/test.txt
   FileReadAll myFile fileContents
-  print ${fileContents}
+  print ${fileContents} xxxx \n
   FileLength myFile length
-  print ${length}
+  # this is a comment
+  # two lines worth
+  print length ${length} \n
+  print \n
+  print \n
+  print \n
+  print \n
+  print \n
+  print \n
 end

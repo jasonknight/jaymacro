@@ -36,6 +36,7 @@
  ****************************************************************************/
 #include <stdio.h>		
 #include <stdlib.h>
+#include <math.h>
 #include <unistd.h>
 #include <ctype.h>
 #include <X11/Xlibint.h>
@@ -69,13 +70,32 @@ using namespace __gnu_cxx;
  ****************************************************************************/
 
 #define PROG "xmacroplay"
+#define _VSTRING 1
+#define _VNUMBER 2
+#define _VDOUBLE 3
+#define _VINT    4
+#define _VFILE   3
 
 struct file_object {
   int cpos;
   const char * name;
   int length;
 };
-
+class Variable {
+  public:
+    Variable();
+    ~Variable();
+    void Set(std::string str) {
+      p_data_as_string = str;
+      p_type = _VSTRING;
+    }
+    std::string ToString() {
+      return p_data_as_string;
+    }
+  private:
+    int p_type;
+    std::string p_data_as_string;
+};
 /***************************************************************************** 
  * The delay in milliseconds when sending events to the remote display
  ****************************************************************************/
@@ -90,11 +110,13 @@ const float DefaultScale = 1.0;
 /***************************************************************************** 
  * Globals...
  ****************************************************************************/
+
+int _SourceLines = 150;
 int   Delay = DefaultDelay;
 float Scale = DefaultScale;
 char * Remote;
 int Entry = NULL;
-std::string Source[1024];
+std::string * Source = new std::string[_SourceLines];
 int SourceNumLines = 0;
 std::map<std::string,int> Labels;
 int Index = 0;
@@ -113,10 +135,12 @@ int GlobalScreen;
  *
  *  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 std::map<std::string,std::string> Registers;
+std::map<std::string,Variable *> Variables; 
 std::map<std::string,file_object *> OpenFiles;
 
 int CallStackPtr = 0;
-int CallStack[1024];
+int _StackDepth = 60480;
+int CallStack[6048];
 
 
 // we put the function sigs here so that they are accessible
@@ -446,18 +470,29 @@ std::string doubleToString(double d) {
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 // trim from start
 static inline std::string &ltrim(std::string &s) {
-        s.erase(s.begin(), std::find_if(s.begin(), s.end(), std::not1(std::ptr_fun<int, int>(std::isspace))));
-        return s;
+//   std::cout << "ltrim recv: " << s << std::endl;
+  if (s.empty())
+    return s;
+  s.erase(s.begin(), std::find_if(s.begin(), s.end(), std::not1(std::ptr_fun<int, int>(std::isspace))));
+  return s;
 }
 
 // trim from end
 static inline std::string &rtrim(std::string &s) {
-        s.erase(std::find_if(s.rbegin(), s.rend(), std::not1(std::ptr_fun<int, int>(std::isspace))).base(), s.end());
-        return s;
+//    std::cout << "rtrim recv: " << s << std::endl;
+  if (s.empty())
+    return s;
+  s.erase(std::find_if(s.rbegin(), s.rend(), std::not1(std::ptr_fun<int, int>(std::isspace))).base(), s.end());
+  return s;
 }
 // trim from both ends
 static inline std::string &trim(std::string &s) {
-        return ltrim(rtrim(s));
+//   std::cout << "trying to trim : '" << s << "'" << std::endl;
+  if (s.empty()) {
+//     std::cout << "s is empty: '" << s << "'" << std::endl;
+    return s;
+  }
+  return ltrim(rtrim(s));
 }
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  *  Parse a string for special characters.
@@ -600,7 +635,7 @@ static inline void executeLine(std::string &sline) {
 
     myfile << sline;
 	  myfile >> ev;
-    //std::cout << "\t\t\t\t\t\tev: " << ev << std::endl;
+//     std::cout << "\t\t\t\t\t\tev: " << ev << std::endl;
 	  char * nev = trimWhitespace(ev);
 	  strcpy(ev,nev);
 	  if (ev[0]=='#')
@@ -650,7 +685,6 @@ static inline void executeLine(std::string &sline) {
       fob = &ff;
       fpath = trim(parseSpecialChars(fpath));
       fob->name = stringToCharz(fpath);
-      std::cout << "File Name is: " << fob->name << std::endl;
       std::ifstream f(fpath.c_str());
       f.seekg(0, std::ios::end);
       fob->length = f.tellg();
@@ -665,17 +699,9 @@ static inline void executeLine(std::string &sline) {
       std::string target;
       myfile >> desc;
       myfile >> target;
-	    int length;
-      char * buffer;
-      std::cout << "File name is: " << OpenFiles[desc]->name << std::endl;
       std::ifstream f(OpenFiles[desc]->name);
-      length = OpenFiles[desc]->length;
-      buffer = new char [length];
-      f.read(buffer,length);
-      std::string b;
-      b = buffer;
-      Registers[target] = b;
-      delete[] buffer;
+      std::string str((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+      Registers[target] = str;
       f.close();
 	  }
     else if (!strcasecmp("FileLength",ev))
@@ -761,9 +787,9 @@ static inline void executeLine(std::string &sline) {
         Registers["SCS"] = s.str(); 
       }
 	    CallStackPtr++;
-      if (CallStackPtr > 1024) {
+      if (CallStackPtr > _StackDepth) {
 		    std::cout << "Call Stack Too Deep!";
-		   exit(-1);
+		    exit(-1);
 	    }
       std::string token;
       token = str;
@@ -899,23 +925,23 @@ static inline void executeLine(std::string &sline) {
 	    }
     	  XTestFakeKeyEvent ( GlobalDisplay, kc, False, Delay );
 	  }
-	  else if (!strcasecmp("String",ev))
+	  else if (!strcasecmp("Send",ev))
 	  {
 	    myfile.ignore().get(str,1024);
-	    std::cout << "String: " << str << std::endl;
 	    b=0;
 	    while(str[b]) sendChar(GlobalDisplay, str[b++]);
 	  }
-	  else if (!strcasecmp("Run",ev))
+	  else if (!strcasecmp("Exec",ev))
 	  {
 	    myfile.ignore().get(str,1024);
-	    std::cout << "String: " << str << std::endl;
 	    pid_t cpid;
       cpid = fork();
       if (cpid==0) {
 	      system(str);
 	      exit(0);
-	    }
+	    } else {
+        
+      }
 	  }
 	  else if (!strcasecmp("Focus",ev))
 	  {
@@ -998,27 +1024,60 @@ static inline void executeLine(std::string &sline) {
  * using tellg just isn't cutting it. 
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 void parseFileIntoStruct(char * fileName) {
+//   std::cout << "fileName is : " << fileName;
   std::string line;
   std::ifstream file (fileName);
   std::string token;
   std::stringstream ss;
   int index = 0;
   while( getline(file,line) ) {
+//     std::cout << "CURRENT LINE IS: " << line << std::endl;
     trim(line);
+//     std::cout << "trimmed line is: " << line << std::endl;
+    if (line.empty() || line == "" || line.substr(0,1) == "#") {
+//       std::cout << " line is blank" << std::endl;
+      continue;
+    } else {
+//       std::cout << " line is not blank" << std::endl;
+    }
+//     std::cout << index << " > " << _SourceLines << std::endl;
+    if (index >= _SourceLines) {
+//       std::cout << "Calculating new lines" << std::endl;
+      int _NewSourceLines = _SourceLines + floor(_SourceLines * 0.33);
+//       std::cout << "new sl " << _NewSourceLines << std::endl;
+      std::string * NewSource = new std::string[_NewSourceLines];
+      memcpy(NewSource,Source,_SourceLines * sizeof(std::string));
+      Source = NewSource;
+      _SourceLines = _NewSourceLines;
+    } else {
+//       std::cout << "no need to resize" << std::endl;
+    }
+//     std::cout << " setting line " << std::endl;
     Source[index] = line;
+//     std::cout << " line set " << std::endl;
     // Now let's look at the string and find out some stuff about it
+//     std::cout << "setting ss" << std::endl;
     ss.str(line);
+//     std::cout << "reading token" << std::endl;
     ss >> token;
-    token = trim(token);
-    if (token == "label") {
-      ss >> token;
-      Labels[token] = index + 1;
-  } else if (token == "entry") {
-      Entry = index;
+//     std::cout << "token read" << std::endl;
+    if (!token.empty() && token.length() > 2) {
+//       std::cout << "token is not empty " << token << token.length() << std::endl;
+      token = trim(token);
+      if (token == "label" || token == "function") {
+        ss >> token;
+        Labels[token] = index + 1; // i.e. we goto the declaration line + 1
+      } else if (token == "entry" || token == "main") {
+        Entry = index;
+      }
+//       std::cout << "token looking complete" << std::endl;
+    } else {
+//       std::cout << "token was empty" << std::endl;
     }
     ss.clear();
     index++;
   }
+//   std::cout << "done parsing file" << std::endl;
   SourceNumLines = index;
   if (Entry == NULL) {
     // we assume the first line is the entry
@@ -1037,12 +1096,13 @@ void parseFileIntoStruct(char * fileName) {
 /****************************************************************************/
 
 void eventLoop (Display * RemoteDpy, int RemoteScreen,char * filename) {
+//   std::cout << "eventLoop beginning with filename " << filename << std::endl;
   parseFileIntoStruct(filename);
   GlobalDisplay = RemoteDpy;
   GlobalScreen = RemoteScreen;
   for ( Index = Entry; Index <= SourceNumLines; Index++ ) {
     //usleep(500000);
-    //std::cout << "\t\t\t\t\tLine: " << Source[Index] << std::endl;
+//     std::cout << "\t\t\t\t\tLine: " << Source[Index] << std::endl;
     if (isPostIf(Source[Index])) {
       //do nothing
     } else {
@@ -1073,6 +1133,7 @@ int main (int argc, char * argv[]) {
   XTestDiscard ( RemoteDpy );
 
   // start the main event loop
+  std::cout << "Starting main loop" << std::endl;
   eventLoop ( RemoteDpy, RemoteScreen, argv[2] );
 
   // discard and even flush all events on the remote display
