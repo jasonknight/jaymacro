@@ -1,18 +1,13 @@
-label give_lovies
-  print I love you Chu!\n
+function helloWorld
+  print Hello World!\n
+  return
+function goodbyeWorld
+  print Goodbye Cruel World!!\n
   return
 entry
-  set myGirl Chu
-  goto give_lovies if ${myGirl} is Chu
-  set myGirl SomeoneElse
-  print Get away fool I don't love ${myGirl} \n if ${myGirl} not Chu
+  set test 1
+  helloWorld if ${test} is 1
+  set test sayGoodBye
+  goodbyeWorld if ${test} like ^say[\w]+
   endl
-  set myGirl Chu
-  set x 1
-  label loop_1
-  if ${x} not 10
-    set x++
-    goto give_lovies
-    goto loop_1
-  endif
 end

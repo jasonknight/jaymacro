@@ -1,0 +1,16 @@
+# JayMacro
+
+This program is based off of the most excellent, but currently not maintained(as far as I know) xmacro program. I was looking for
+a program to automate testing of a gui application that was 100% user simulation, or as 100% as you can get. I tried xnee, xdotool
+and similar others. What I wanted was something similar to AutoIt.
+
+I considered writing something using v8 that connects up with the XTEST lib, however; there is the small problem of writing a macro recorder,
+which is an essential component to creating automated tests(It's nice that you can move the mouse, but finding the x,y is tedious), so I 
+dumped that in favor of simply building off of an existing program.
+
+I needed something with simple logic components, nothing fancy.
+
+JayMacro sports an ASM like language (Optional, all old xmacro scripts will run out of the box) that lets you have loops, subroutines,
+variables and other goodies.
+
+

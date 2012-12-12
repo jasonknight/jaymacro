@@ -100,7 +100,8 @@ class Variable {
  * The delay in milliseconds when sending events to the remote display
  ****************************************************************************/
 const int DefaultDelay = 10;
-
+int MouseDelay = DefaultDelay;
+ int KeyPressDelay = DefaultDelay;
 /***************************************************************************** 
  * The multiplier used fot scaling coordinates before sending them to the
  * remote display. By default we don't scale at all
@@ -457,6 +458,13 @@ double stringToDouble(std::string str) {
   s >> d;
   return d;
 }
+int stringToInt(std::string str) {
+  std::stringstream s;
+  s.str(str);
+  int d;
+  s >> d;
+  return d;
+}
 std::string doubleToString(double d) {
   std::stringstream s;
   s.str("");
@@ -464,7 +472,86 @@ std::string doubleToString(double d) {
   return s.str();
 }
 
-
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+ * Xlib Helper Functions
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+Window recursiveWindowSearch(std::string &keywords,Window window,int recurse,int level) {
+  Window root_win, parent_win;
+  unsigned int num_children;
+  Window *child_list;
+  XClassHint classhint;
+  XTextProperty name;
+  int i;
+  if (!XQueryTree(GlobalDisplay, window, &root_win, &parent_win, &child_list, &num_children)) {
+    std::cout << "Recursive returns null to query tree" << std::endl;
+    return NULL;
+  }
+  for (i = (int)num_children - 1; i >= 0; i--) {
+    if (XGetWMName(GlobalDisplay,child_list[i],&name)) {
+      std::cout << "Recursive Search Name: " << name.value << std::endl;
+      std::string s_name = (char *)name.value;
+      if (s_name.find(keywords) != std::string::npos) {
+        std::cout << "Returning found window" << std::endl;
+        return child_list[i];
+      } 
+    }
+    Window t;
+    if (t = recursiveWindowSearch(keywords,child_list[i],1,++level)) {
+      return t;
+    }
+  }
+  return NULL;
+}
+Window GetWindowByName(std::string &keywords) {
+  Window window, rootwindow;
+  rootwindow = RootWindow(GlobalDisplay,DefaultScreen(GlobalDisplay));
+  Atom atom = XInternAtom(GlobalDisplay, "_NET_CLIENT_LIST", True);
+  XWindowAttributes attr;
+  Atom atom_event;
+  XEvent xev;
+  Atom actualType;
+  int format;
+  unsigned long numItems, bytesAfter;
+  unsigned char *data = 0;
+  int status = XGetWindowProperty(GlobalDisplay,
+                                  rootwindow,
+                                  atom,
+                                  0L,
+                                  (~0L),
+                                  false,
+                                  AnyPropertyType,
+                                  &actualType,
+                                  &format,
+                                  &numItems,
+                                  &bytesAfter,
+                                  &data);
+  if (status >= Success && numItems) {
+    int * array = (int *)data;
+    for (int k = 0; k < numItems; k++) {
+      window = (Window)array[k];
+      XTextProperty name;
+//       std::cout << "Fetching Name" << std::endl;
+      if (window != NULL) {
+        XGetWMName(GlobalDisplay,window,&name);
+        std::string s_name = (char *)name.value;
+        std::cout << "Name: " << name.value << std::endl;
+        if (s_name.find(keywords) != std::string::npos) {
+          std::cout << "Returning found window" << std::endl;
+          return window;
+        } else {
+          std::cout << "Recursive Search Started" << std::endl;
+          Window t = recursiveWindowSearch(keywords,window,1,1);
+          if (t!= NULL) {
+            return t;
+          }
+        }
+      } else {
+        std::cout << "Window is null" << std::endl;
+      }
+    } // end for
+  }
+  return window;
+}
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  * Trim whitespace with an std::string
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -559,20 +646,30 @@ static inline void saveRegexResult(boost::smatch &what) {
       
 }
 static inline bool isPostIf(std::string &str) {
-  boost::regex expr("(.*) (if .*)");
+  boost::regex expr("(.*) if (.*)");
   boost::smatch what;
   if (boost::regex_match(str,what,expr)) {
+    
+    boost::regex expr2("(.*) (is|not|like) (.*)");
+    boost::smatch what2;
+    
     std::stringstream line;
     std::string nstr = what[2];
+    
+
+    boost::regex_match(nstr,what2,expr2);
+
     line.str(nstr);
     std::string ltoken,comp,rtoken;
-    line >> ltoken;
-    line >> ltoken >> comp >> rtoken;
+    ltoken = what2[1];
+    comp = what2[2];
+    rtoken = what2[3];
     ltoken = parseSpecialChars(ltoken);
     rtoken = parseSpecialChars(rtoken);
     bool istrue = expressionResult(ltoken,comp,rtoken);
     if (istrue) {
       std::string x = what[1];
+//       std::cout << "is true, executing line: " << x << std::endl;
       executeLine(x);
     }
     return true;
@@ -583,6 +680,7 @@ static inline bool expressionResult(std::string &ltoken,
                                     std::string &comp, 
                                     std::string & rtoken)
 {
+//      std::cout << "(" << ltoken << " " << comp << " " << rtoken << ")" << std::endl;
     if (comp == "is" && ltoken == rtoken)
       return true;
     if (comp == "not" && ltoken != rtoken)
@@ -635,7 +733,7 @@ static inline void executeLine(std::string &sline) {
 
     myfile << sline;
 	  myfile >> ev;
-//     std::cout << "\t\t\t\t\t\tev: " << ev << std::endl;
+//      std::cout << "\t\t\t\t\t\tev: " << ev << std::endl;
 	  char * nev = trimWhitespace(ev);
 	  strcpy(ev,nev);
 	  if (ev[0]=='#')
@@ -742,6 +840,18 @@ static inline void executeLine(std::string &sline) {
 	    std::cout << "Delay: " << b << std::endl;
 	    sleep ( b );
 	  }
+	  else if (!strcasecmp("SetMouseDelay",ev))
+    {
+      myfile >> b;
+      std::cout << "Delay: " << b << std::endl;
+      MouseDelay = b;
+    }
+    else if (!strcasecmp("SetKeyPressDelay",ev))
+    {
+      myfile >> b;
+      std::cout << "Delay: " << b << std::endl;
+      KeyPressDelay = b;
+    }
 	  else if (!strcasecmp("USleep",ev))
 	  {
 	    myfile >> b;
@@ -832,25 +942,31 @@ static inline void executeLine(std::string &sline) {
 	  {
 	    myfile >> x >> y;
 	    std::cout << "Move: " << x << " " << y << std::endl;
-	    XTestFakeMotionEvent ( GlobalDisplay, GlobalScreen , scale ( x ), scale ( y ), Delay ); 
+	    XTestFakeMotionEvent ( GlobalDisplay, GlobalScreen , scale ( x ), scale ( y ), MouseDelay ); 
 	  }
+	  else if (!strcasecmp("RelativeMove",ev))
+    {
+      myfile >> x >> y;
+      std::cout << "Move: " << x << " " << y << std::endl;
+      XTestFakeRelativeMotionEvent ( GlobalDisplay, scale ( x ), scale ( y ), MouseDelay ); 
+    }
 	  else if (!strcasecmp("MotionNotify",ev) || !strcasecmp("Move",ev))
 	  {
 	    myfile >> x >> y;
 	    std::cout << "MotionNotify: " << x << " " << y << std::endl;
-	    XTestFakeMotionEvent ( GlobalDisplay, GlobalScreen , scale ( x ), scale ( y ), Delay ); 
+	    XTestFakeMotionEvent ( GlobalDisplay, GlobalScreen , scale ( x ), scale ( y ), MouseDelay ); 
 	  }
 	  else if (!strcasecmp("KeyCodePress",ev))
 	  {
 	    myfile >> kc;
 	    std::cout << "KeyPress: " << kc << std::endl;
-	    XTestFakeKeyEvent ( GlobalDisplay, kc, True, Delay );
+	    XTestFakeKeyEvent ( GlobalDisplay, kc, True, KeyPressDelay );
 	  }
 	  else if (!strcasecmp("KeyCodeRelease",ev))
 	  {
 	    myfile >> kc;
 	    std::cout << "KeyRelease: " << kc << std::endl;
-    	  XTestFakeKeyEvent ( GlobalDisplay, kc, False, Delay );
+    	  XTestFakeKeyEvent ( GlobalDisplay, kc, False, KeyPressDelay );
 	  }
 	  else if (!strcasecmp("KeySym",ev))
 	  {
@@ -861,7 +977,7 @@ static inline void executeLine(std::string &sline) {
 	    	std::cerr << "No keycode on remote display found for keysym: " << ks << std::endl;
         return;
 	    }
-	    XTestFakeKeyEvent ( GlobalDisplay, kc, True, Delay );
+	    XTestFakeKeyEvent ( GlobalDisplay, kc, True, KeyPressDelay );
 	    XFlush ( GlobalDisplay );
 	    XTestFakeKeyEvent ( GlobalDisplay, kc, False, Delay );
 	  }
@@ -874,7 +990,7 @@ static inline void executeLine(std::string &sline) {
 	    	std::cerr << "No keycode on remote display found for keysym: " << ks << std::endl;
         return;
 	    }
-	    XTestFakeKeyEvent ( GlobalDisplay, kc, True, Delay );
+	    XTestFakeKeyEvent ( GlobalDisplay, kc, True, KeyPressDelay );
 	  }
 	  else if (!strcasecmp("KeySymRelease",ev))
 	  {
@@ -885,7 +1001,7 @@ static inline void executeLine(std::string &sline) {
 	    	std::cerr << "No keycode on remote display found for keysym: " << ks << std::endl;
         return;
 	    }
-    	  XTestFakeKeyEvent ( GlobalDisplay, kc, False, Delay );
+    	  XTestFakeKeyEvent ( GlobalDisplay, kc, False, KeyPressDelay );
 	  }
 	  else if (!strcasecmp("KeyStr",ev))
 	  {
@@ -897,9 +1013,9 @@ static inline void executeLine(std::string &sline) {
 	    	std::cerr << "No keycode on remote display found for '" << ev << "': " << ks << std::endl;
         return;
 	    }
-	    XTestFakeKeyEvent ( GlobalDisplay, kc, True, Delay );
+	    XTestFakeKeyEvent ( GlobalDisplay, kc, True, KeyPressDelay );
 	    XFlush ( GlobalDisplay );
-	    XTestFakeKeyEvent ( GlobalDisplay, kc, False, Delay );
+	    XTestFakeKeyEvent ( GlobalDisplay, kc, False, KeyPressDelay );
 	  }
 	  else if (!strcasecmp("KeyStrPress",ev))
 	  {
@@ -911,7 +1027,7 @@ static inline void executeLine(std::string &sline) {
 	    	std::cerr << "No keycode on remote display found for '" << ev << "': " << ks << std::endl;
         return;
 	    }
-	    XTestFakeKeyEvent ( GlobalDisplay, kc, True, Delay );
+	    XTestFakeKeyEvent ( GlobalDisplay, kc, True, KeyPressDelay );
 	  }
 	  else if (!strcasecmp("KeyStrRelease",ev))
 	  {
@@ -923,7 +1039,7 @@ static inline void executeLine(std::string &sline) {
 	    	std::cerr << "No keycode on remote display found for '" << ev << "': " << ks << std::endl;
         return;
 	    }
-    	  XTestFakeKeyEvent ( GlobalDisplay, kc, False, Delay );
+    	  XTestFakeKeyEvent ( GlobalDisplay, kc, False, KeyPressDelay );
 	  }
 	  else if (!strcasecmp("Send",ev))
 	  {
@@ -943,6 +1059,21 @@ static inline void executeLine(std::string &sline) {
         
       }
 	  }
+	  else if (!strcasecmp("MoveWindow",ev))
+    {
+      boost::regex expr("'(.*)',([\\s\\d]+),([\\s\\d]+)");
+      boost::smatch what;
+      myfile.ignore().get(str,1024);
+      std::string s_str = trimWhitespace(str);
+      if (boost::regex_match(s_str,what,expr)) {
+        int x = stringToInt(what[2]);
+        int y = stringToInt(what[3]);
+        std::string name = what[1];
+        std::cout << "MoveWindow " << name << " " << x << " " << y << std::endl;
+        Window w = GetWindowByName(name);
+      } //end if regex match
+      
+    }
 	  else if (!strcasecmp("Focus",ev))
 	  {
 	    myfile.ignore().get(str,1024);
@@ -1010,8 +1141,24 @@ static inline void executeLine(std::string &sline) {
       } else {
         std::cout << "Failed...";
       }
-	  }
-	  //else if (ev[0]!=0) std::cout << "Unknown tag: " << ev << std::endl;
+	  } else if (ev[0]!=0) {
+      std::string token = ev;
+      if ( Labels[trim(token)] ) {
+        CallStack[CallStackPtr] = ++Index;
+        if (CallStackPtr == 0) {
+          std::stringstream s;
+          s << Index;
+          Registers["SCS"] = s.str(); 
+        }
+        CallStackPtr++;
+        if (CallStackPtr > _StackDepth) {
+          std::cout << "Call Stack Too Deep!";
+          exit(-1);
+        }
+        Index = Labels[trim(token)];
+        executeLine(Source[Index]);
+      }
+    }
 
 	  // sync the remote server
 	  XFlush ( GlobalDisplay );
@@ -1133,7 +1280,7 @@ int main (int argc, char * argv[]) {
   XTestDiscard ( RemoteDpy );
 
   // start the main event loop
-  std::cout << "Starting main loop" << std::endl;
+//   std::cout << "Starting main loop" << std::endl;
   eventLoop ( RemoteDpy, RemoteScreen, argv[2] );
 
   // discard and even flush all events on the remote display

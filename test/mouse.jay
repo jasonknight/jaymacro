@@ -1,0 +1,8 @@
+main
+  Move 100 100
+  SetMouseDelay 50
+  RelativeMove 50 50
+  SetMouseDelay 1000
+  RelativeMove 10 10
+  RelativeMove 10 10
+end
